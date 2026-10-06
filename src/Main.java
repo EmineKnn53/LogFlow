@@ -8,10 +8,17 @@ public class Main {
         }
 
         Source<String> source = new FileLineSource(args[0]);
-        Sink<String> sink = new ConsoleSink();
 
-        Pipeline pipeline = new Pipeline(source, sink);
+        ParserStage parser = new ParserStage();
+
+        Sink<LogRecord> sink = new ConsoleSink();
+
+        Pipeline pipeline = new Pipeline(source, parser, sink);
 
         pipeline.run();
+
+        System.out.println(
+                "Toplam hatali satir sayisi: " + parser.getErrorCount()
+        );
     }
 }

@@ -1,54 +1,34 @@
-import java.util.ArrayList;
-import java.util.List;
-
 public class Pipeline {
 
     private final Source<String> source;
-    private final Sink<String> sink;
-    private final List<Stage<String, String>> stages;
+    private final Stage<String, LogRecord> stage;
+    private final Sink<LogRecord> sink;
 
-    public Pipeline(Source<String> source, Sink<String> sink) {
+    public Pipeline(
+            Source<String> source,
+            Stage<String, LogRecord> stage,
+            Sink<LogRecord> sink) {
+
         this.source = source;
+        this.stage = stage;
         this.sink = sink;
-        this.stages = new ArrayList<>();
-    }
-
-    public Pipeline addStage(Stage<String, String> stage) {
-        stages.add(stage);
-        return this;
     }
 
     public void run() {
 
-        for (Stage<String, String> stage : stages) {
-            stage.open();
-        }
+        stage.open();
 
-        source.produce(item -> processStage(0, item));
+        source.produce(item -> {
+            try {
+                stage.process(item, sink::consume);
+            } catch (StageException e) {
+                throw new RuntimeException(
+                        "Pipeline asamasinda hata olustu.",
+                        e
+                );
+            }
+        });
 
-        for (Stage<String, String> stage : stages) {
-            stage.close();
-        }
-    }
-
-    private void processStage(int index, String item) {
-
-        if (index >= stages.size()) {
-            sink.consume(item);
-            return;
-        }
-
-        Stage<String, String> stage = stages.get(index);
-
-        try {
-            stage.process(item, nextItem ->
-                processStage(index + 1, nextItem)
-            );
-        } catch (StageException e) {
-            throw new RuntimeException(
-                "Pipeline aşamasında hata oluştu.",
-                e
-            );
-        }
+        stage.close();
     }
 }
