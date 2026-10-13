@@ -1,76 +1,49 @@
-import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
 
 public class PipelineTest {
 
     @Test
-    void pipelineShouldTransferDataFromSourceToSink() {
+    void pipelineShouldTransferDataThroughStage() {
 
-        // Test verileri
-        List<String> input = List.of("birinci", "ikinci", "ucuncu");
-
-        // Source
-        Source<String> source = emitter -> {
-            for (String item : input) {
-                emitter.emit(item);
-            }
+        // Test icin ornek veri kaynagi
+        Source<String> source = out -> {
+            out.emit("birinci");
+            out.emit("ikinci");
+            out.emit("ucuncu");
         };
 
-        // Stage
-        Stage<String, LogRecord> stage = new Stage<>() {
-
-            @Override
-            public void open() {
-            }
-
-            @Override
-            public void process(
-                    String item,
-                    Emitter<LogRecord> emitter) throws StageException {
-
-                LogRecord record = new LogRecord(
-                        null,
-                        null,
-                        null,
-                        item,
-                        200,
-                        0,
-                        null,
-                        java.util.Map.of(),
-                        item
-                );
-
-                emitter.emit(record);
-            }
-
-            @Override
-            public void close() {
-            }
+        // Gelen metinleri buyuk harfe donusturen asama
+        Stage<String, String> stage = (input, out) -> {
+            out.emit(input.toUpperCase(Locale.ROOT));
         };
 
-        // Sink'ten gelen kayıtları burada tutacağız
-        List<LogRecord> results = new ArrayList<>();
+        // Pipeline sonucunu saklayacak liste
+        List<String> results = new ArrayList<>();
 
-        Sink<LogRecord> sink = results::add;
+        // Sonuclari listeye ekleyen sink
+        Sink<String> sink = results::add;
 
-        // Pipeline
-        Pipeline pipeline = new Pipeline(
-                source,
-                stage,
-                sink
-        );
+        // PipelineBuilder ile pipeline olusturma
+        Pipeline pipeline = PipelineBuilder
+                .from(source)
+                .via(stage)
+                .to(sink);
 
+        // Pipeline'i calistirma
         pipeline.run();
 
-        // Kontroller
+        // Sonuclari dogrulama
         assertEquals(3, results.size());
 
-        assertEquals("birinci", results.get(0).path());
-        assertEquals("ikinci", results.get(1).path());
-        assertEquals("ucuncu", results.get(2).path());
+        assertEquals("BIRINCI", results.get(0));
+        assertEquals("IKINCI", results.get(1));
+        assertEquals("UCUNCU", results.get(2));
     }
 }
