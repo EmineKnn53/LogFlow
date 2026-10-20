@@ -279,7 +279,7 @@ java -cp "out;lib/*" Main --config configs/invalid-stage.yaml
 ```
 
 ```text
-Parametre hatasi: Bilinmeyen asama turu: bilinmeyen
+Parametre hatasi: Bilinmeyen stage tipi: bilinmeyen
 ```
 
 ```powershell
@@ -298,7 +298,7 @@ java -cp "out;lib/*" Main --config configs/invalid-field.yaml
 Parametre hatasi: Gecersiz veya bos alan secimi.
 ```
 
-**Ödevde istenen beş yükleyici senaryosu doğrulandı:** geçerli yapılandırma, bilinmeyen aşama, eksik parametre, yanlış parametre türü ve boş pipeline. `PipelineConfigBuilderTest` içindeki altı testin tamamı başarılıdır (ek olarak geçersiz projeksiyon alanı test edilir). Boş `stages: []` listesi, işlem başlamadan önce `IllegalArgumentException` ile reddedilir.
+**Ödevde istenen yükleyici test durumları:** geçerli yapılandırma, bilinmeyen aşama, eksik parametre, yanlış türde parametre ve boş pipeline. İlk dört kategori için testler ve hata kontrolleri gösterilmiştir; **boş pipeline'ın reddedilmesi ayrıca kontrol edilmelidir** (mevcut `PipelineConfigBuilder` boş `stages` listesini açıkça reddetmiyor).
 
 **Ödev teslimleri:** `v4` etiketi, `ARCHITECTURE.md` içinde yapılandırma şeması, stage registry, loader/builder, üç YAML dosyası ve README içinde hata örnekleri.
 
@@ -343,15 +343,20 @@ LogFlow/
 └── CHANGELOG.md
 ```
 
-Bu ağaç, artımlarda kullanılan **beklenen ve konuşmada görülen dosyaları** gösterir; yerel klasörün eksiksiz envanteri değildir. `ARCHITECTURE.md` ve `CHANGELOG.md` dosyaları Artım 4 sonuçlarına göre güncellenmiştir.
+Bu ağaç, artımlarda kullanılan **beklenen ve konuşmada görülen dosyaları** gösterir; yerel klasörün eksiksiz envanteri değildir. `ARCHITECTURE.md` ve `CHANGELOG.md` dosyalarının içeriği ayrıca kontrol edilmelidir.
 
 ## 9. Kurulum ve çalıştırma
 
 ### 9.1 Gereksinimler
 
 - JDK 17 veya üzeri (`java -version`, `javac -version`)
-- `lib/snakeyaml-2.7.jar`
-- Testler için `lib/junit-platform-console-standalone-6.1.3.jar`
+- SnakeYAML 2.7: https://repo.maven.apache.org/maven2/org/yaml/snakeyaml/2.7/snakeyaml-2.7.jar
+- JUnit Platform Console Standalone 6.1.3: https://repo.maven.apache.org/maven2/org/junit/platform/junit-platform-console-standalone/6.1.3/junit-platform-console-standalone-6.1.3.jar
+
+Proje ana klasöründe `lib` klasörü oluşturulmalı ve indirilen iki JAR dosyası bu klasöre yerleştirilmelidir. Dosya adları sırasıyla `snakeyaml-2.7.jar` ve `junit-platform-console-standalone-6.1.3.jar` olmalıdır.
+
+JAR dosyaları `.gitignore` nedeniyle GitHub deposunda tutulmaz. Kütüphaneler yerleştirildikten sonra aşağıdaki derleme ve çalıştırma komutları kullanılabilir.
+
 
 ### 9.2 Derleme
 
@@ -401,13 +406,13 @@ java -jar lib\junit-platform-console-standalone-6.1.3.jar execute --class-path "
 
 | Ölçüt | Sonuç |
 | --- | ---: |
-| Bulunan test | **50** |
-| Başarılı test | **50** |
+| Bulunan test | **48** |
+| Başarılı test | **48** |
 | Başarısız test | **0** |
 | Atlanan test | **0** |
 | Başarılı test konteyneri | **13** |
 
-Testler parser, filtre, projeksiyon, dosya yazma, pipeline, YAML loader, registry, yapılandırma builder'ı ve YAML entegrasyonunu kapsar. **50/50 sonucu yalnızca gösterilen test çalıştırmasını ifade eder; tüm ödev koşullarının eksiksiz karşılandığını tek başına kanıtlamaz.**
+Testler parser, filtre, projeksiyon, dosya yazma, pipeline, YAML loader, registry, yapılandırma builder'ı ve YAML entegrasyonunu kapsar. **48/48 sonucu yalnızca gösterilen test çalıştırmasını ifade eder; tüm ödev koşullarının eksiksiz karşılandığını tek başına kanıtlamaz.**
 
 ## 11. Mimari belgeler ve sürüm yönetimi
 
@@ -421,6 +426,7 @@ Testler parser, filtre, projeksiyon, dosya yazma, pipeline, YAML loader, registr
 | 4 | `v4` | `ARCHITECTURE.md`: YAML yapılandırma şeması; registry, loader, üç yapılandırma |
 
 Etiketlerin gerçekten oluşturulup uzak depoya gönderildiği `git tag` ve `git ls-remote --tags origin` ile kontrol edilmelidir. README'deki teslim listesi, etiketlerin mevcut olduğunu iddia etmez.
+
 
 
 ## 12. Mimari sınırlamalar
