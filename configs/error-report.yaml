@@ -1,0 +1,21 @@
+
+source:
+  type: file
+  path: data/access-small.log
+
+stages:
+  - type: parser
+
+  - type: filter
+    minStatus: 400
+
+  - type: projection
+    fields:
+      - timestamp
+      - clientIp
+      - status
+      - path
+
+sink:
+  type: file
+  path: error-report.log

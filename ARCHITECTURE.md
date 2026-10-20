@@ -1,401 +1,337 @@
+# LogFlow — Mimari Dokümantasyon
 
-# LogFlow - Mimari Dokumantasyon
+**Proje:** LogFlow — Yazılım Mimarisi Dönem Projesi  
+**Teknoloji:** Java, JUnit 5, SnakeYAML 2.7  
+**Kapsam:** Artım 1, Artım 2, Artım 3 ve Artım 4
 
-## 1. Proje Genel Bakisi
+> Bu belge, paylaşılan uygulama kodları ve test sonuçları ile öğretim elemanının dört artım yönergelerine dayanır. Tamamlanmış özellikler ile teslim öncesi düzeltilmesi gereken noktalar ayrı belirtilmiştir.
 
-LogFlow, Java programlama dili kullanilarak gelistirilen,
-log dosyalarini asamali olarak isleyen bir uygulamadir.
+## 1. Projenin Amacı ve Mimari Yaklaşım
 
-Proje, Source - Stage - Sink mimari yaklasimini temel alir.
-
-Artim 3 kapsaminda uygulamaya su ozellikler eklenmistir:
-
-- Predicate tabanli filtreleme
-- Istenen alanlari secme (Projection)
-- Dosyaya cikti yazma
-- Fluent PipelineBuilder API
-- Komut satiri parametreleri
-- Birim ve entegrasyon testleri
-- Filtre siralamasi ve performans deneyi
-
-## 2. Sistemin Mimari Yapisi
-
-Uygulamanin genel veri akisi:
+LogFlow, günlük (log) dosyalarını ardışık ve bağımsız bileşenler aracılığıyla işleyen Java uygulamasıdır. Mimari, **Source → Stage → Sink** veri akışına dayanır. Kaynak veriyi üretir, aşamalar veriyi dönüştürür veya eler, hedef bileşen sonuçları tüketir. `Pipeline`, bileşenleri bağlayıp çalıştırır.
 
 ```text
-FileLineSource
-      |
-      v
-ParserStage
-      |
-      v
-PredicateFilterStage
-      |
-      v
-ProjectionStage
-      |
-      v
-FileSink
+                      Pipeline
+                         |
+                         v
+ FileLineSource --> ParserStage --> PredicateFilterStage --> ProjectionStage --> FileSink
+      |                |                  |                       |              |
+  String satır       LogRecord         0 veya 1 kayıt          Seçili alanlar   Dosya
 ```
 
-### 2.1. FileLineSource
+Aşamalar `Emitter` üzerinden veri iletir. Bu yaklaşım, bir girdiden sıfır, bir veya birden fazla çıktı üretmeye imkân tanır. Bileşenlerin sorumluluklarını ayırmak, bağımsız test etmeyi ve aşamaları yeniden kullanmayı kolaylaştırır.
 
-Log dosyasini satir satir okuyarak pipeline'a aktarir.
+## 2. Artım 1 — İskelet Pipeline
 
-### 2.2. ParserStage
+### 2.1. Mimari hedef
 
-Ham log satirlarini LogRecord nesnelerine donusturur.
+İlk artımın odağı **bileşenler ve bağlayıcılar** ile **arayüz ve uygulama ayrımıdır**. İlk çalışan sistemin amacı, bir metin dosyasını `Main` içinde satır satır işlemeye çalışmadan pipeline aracılığıyla okumak ve konsola yazdırmaktır.
 
-Gecersiz log satirlarini sayar ve hata sayisini
-getErrorCount() metodu ile sunar.
+### 2.2. Temel sözleşmeler
 
-### 2.3. PredicateFilterStage
+```java
+public interface Emitter<T> {
+    void emit(T item);
+}
 
-Predicate<LogRecord> arayuzunu kullanarak
-log kayitlarini belirli kosullara gore filtreler.
+public interface Source<O> {
+    void produce(Emitter<O> out);
+}
 
-Desteklenen ornek kosullar:
+public interface Stage<I, O> {
+    void process(I input, Emitter<O> out) throws StageException;
+    default void open() {}
+    default void close() {}
+}
 
-- HTTP status >= 400
-- URL yolunun /api ile baslamasi
-- Belirli bir zaman araliginda bulunma
+public interface Sink<I> {
+    void consume(I item);
+}
+```
 
-Kosulu saglayan kayitlar sonraki asamaya aktarilir.
-Kosulu saglamayan kayitlar elenir.
+`Stage<I,O>` girdiyi işleyip `Emitter<O>` aracılığıyla aktarır. `Source` veri üretir; `Sink` veriyi tüketir. Sonraki artımlarda `Sink` sözleşmesine kaynak yönetimi için `open()` ve `close()` kancaları eklenmiştir.
 
-### 2.4. ProjectionStage
+### 2.3. İlk mimari akış
 
-LogRecord nesnesinden yalnizca kullanicinin
-sectigi alanlari aktarir.
+```text
++----------------+         +----------------+
+| FileLineSource | ------> |  ConsoleSink   |
++----------------+         +----------------+
+       Kaynak                  Hedef
+       \__________ Pipeline.run() _________/
+```
 
-Ornek alanlar:
+- `FileLineSource`: `data/access-small.log` dosyasını satır satır okur.
+- `ConsoleSink`: gelen satırları konsola yazar.
+- `Pipeline`: kaynak ile hedef arasındaki akışı kurar.
+- `Main`: argümanları alır, pipeline'ı kurar ve `run()` çağırır.
 
-- timestamp
-- clientIp
-- method
-- path
-- status
-- bytes
-- userAgent
-- attributes
-- raw
+**Yönergedeki teslimler:** Temel arayüzler, kaynak/hedef uygulamaları, `Pipeline`, `Main`, örnek veri dosyası, README, iki kutulu mimari diyagram ve `v1` etiketi. Bu belgedeki anlatım ilk artımın tasarımını gösterir; mevcut `Main` daha sonraki artımlarda genişletilmiştir.
 
-Secilen alanlar LinkedHashMap kullanilarak
-belirtilen sirada tutulur.
+## 3. Artım 2 — Tipli Kayıtlar ve Ayrıştırma
 
-### 2.5. FileSink
+### 3.1. Mimari hedef
 
-Pipeline sonucunda olusan kayitlari
-belirtilen cikti dosyasina yazar.
+Ham `String` satırlarından alan modeli olan `LogRecord` nesnelerine geçiş; **sorumlulukların ayrılması**, **veri soyutlama** ve **birim testi disiplini**.
 
-Temel metotlari:
+### 3.2. LogRecord
 
-- open(): Cikti dosyasini acar.
-- consume(): Gelen kaydi dosyaya yazar.
-- close(): Dosyayi kapatir.
+```java
+public record LogRecord(
+    Instant timestamp,
+    String clientIp,
+    String method,
+    String path,
+    int status,
+    long bytes,
+    String userAgent,
+    Map<String, String> attributes,
+    String raw
+) {}
+```
 
-Dosya yazma islemlerinde BufferedWriter kullanilir.
+Java `record`, alanlara yeniden değer atanmasını engeller. Bununla birlikte `attributes` alanına değiştirilebilir bir `Map` verilirse içerik değişebilir; **derin değişmezlik** için savunmacı kopyalama (`Map.copyOf`) gerekir. `attributes`, ileriki artımlarda ek bilgiler taşımak üzere bir genişleme noktasıdır.
 
-## 3. PipelineBuilder Tasarimi
+### 3.3. ParserStage ve hata politikası
 
-PipelineBuilder, pipeline asamalarinin
-fluent API yaklasimiyla birlestirilmesini saglar.
+`ParserStage`, Common Log Format (CLF) satırını `LogRecord` nesnesine dönüştürür. Hatalı satırları bu artımda **atlar ve sayar**; hata sayısı `getErrorCount()` üzerinden okunur. Ayrıntılı çalışma zamanı hata yönetimi sonraki artımın konusudur.
 
-Ornek kullanim:
+```text
+FileLineSource (String)
+       |
+       v
+ParserStage (CLF -> LogRecord; geçersiz satırları sayar)
+       |
+       v
+ConsoleSink (okunabilir tek satır)
+```
+
+### 3.4. Test yaklaşımı
+
+`CollectingEmitter`, aşamanın ürettiği kayıtları bellekte toplar; bu sayede `ParserStage` testleri dosya sistemine erişmeden çalıştırılabilir. Yönerge en az sekiz ayrıştırıcı senaryosu ister: geçerli satır, eksik alan, hatalı zaman damgası, hatalı durum kodu, boş satır, fazla boşluk, boşluk içeren tırnaklı user-agent ve sorgu dizeli yol.
+
+Önceki çalışmada JaCoCo **satır kapsama oranı %76,24** olarak raporlanmıştır; bu değer Artım 2 çalışmasına aittir, Artım 4 için yeniden ölçülmüş bir oran değildir.
+
+**Yönergedeki teslimler:** `LogRecord`, `ParserStage`, JUnit 5 testleri, kapsama oranının README'de raporlanması, CHANGELOG kaydı ve `v2` etiketi.
+
+## 4. Artım 3 — Bileşim, Filtreleme ve Projeksiyon
+
+### 4.1. Mimari hedef
+
+Modülerlik, bileşilebilirlik ve aşama düzeyinde tek sorumluluk. İşlem hattı, birbirinden bağımsız aşamaların farklı sıralarda bir araya getirilmesiyle kurulur.
+
+### 4.2. Yeni bileşenler
+
+| Bileşen | Sorumluluk | Girdi → Çıktı |
+|---|---|---|
+| `PredicateFilterStage` | `Predicate<LogRecord>` koşuluna göre kayıtları iletmek veya elemek | `LogRecord` → `LogRecord` |
+| `ProjectionStage` | Yalnızca seçilen alanları aktarmak | `LogRecord` → `Map<String,Object>` |
+| `FileSink` | Sonuçları dosyaya yazmak ve dosya kaynağını kapatmak | Kayıt → Dosya |
+| `PipelineBuilder` | Akıcı API ile aşamaları bağlamak | Pipeline tanımı → `Pipeline` |
+
+Filtre örnekleri: `status >= 400`, `path.startsWith("/api")`, belirli zaman aralığı. Projeksiyon seçilen alanları `LinkedHashMap` içinde belirtilen sırada tutar; çıktı boyutunu azaltma ve veri minimizasyonu açısından faydalıdır.
+
+`FileSink` için `open()` yazıcıyı açar, `consume()` kayıt yazar, `close()` yazıcıyı kapatır. Pipeline yaşam döngüsünün bu çağrıları doğru sırada yapması, tamponlanan verinin kaybolmaması açısından önemlidir.
+
+### 4.3. Fluent PipelineBuilder
 
 ```java
 Pipeline pipeline = PipelineBuilder
-        .from(new FileLineSource(inputFile))
-        .via(new ParserStage())
-        .via(new PredicateFilterStage(
-                r -> r.status() >= 400
-        ))
-        .via(new ProjectionStage(
-                "clientIp", "status", "path"
-        ))
-        .to(new FileSink<>(outputFile));
+    .from(new FileLineSource(inputFile))
+    .via(new ParserStage())
+    .via(new PredicateFilterStage(r -> r.status() >= 400))
+    .via(new ProjectionStage("clientIp", "status", "path"))
+    .to(new FileSink<>(outputFile));
 
 pipeline.run();
 ```
 
-PipelineBuilder kullaniminin avantajlari:
+`via()` çağrıları aşama zincirini oluşturur. Java jenerikleri zincirleme çağrılarda tür uyumunu denetlemeye yardımcı olur. Ancak yapılandırmadan oluşturulan `List<Stage<?,?>>` üzerinde tür uyumu derleme zamanında bütünüyle garanti edilmez; YAML yükleyicisinde ayrıca doğrulama gerekir.
 
-- Okunabilir kod yapisi
-- Yeni asamalarin kolay eklenmesi
-- Asamalarin yeniden kullanilabilmesi
-- Asamalar arasinda tur uyumlulugunun kontrolu
-- Pipeline olusturma isleminin sadeleştirilmesi
+### 4.4. Komut satırı arayüzü
 
-## 4. Komut Satiri Arayuzu
-
-Main.java, pipeline'i PipelineBuilder ile olusturur.
-
-Desteklenen parametreler:
-
-### --min-status
-
-Minimum HTTP durum kodunu belirler.
-
-Ornek:
-
---min-status 400
-
-### --path-prefix
-
-URL yolunun hangi ifade ile baslamasi
-gerektigini belirler.
-
-Ornek:
-
---path-prefix /api
-
-### --fields
-
-Ciktiya aktarilacak alanlari belirler.
-
-Ornek:
-
---fields clientIp,status,path
-
-### --output
-
-Cikti dosyasinin adini belirler.
-
-Ornek:
-
---output output.log
-
-Tam calistirma ornegi:
+Desteklenen parametreler: `--min-status`, `--path-prefix`, `--fields`, `--output`.
 
 ```powershell
-java -cp out Main data\access-small.log --min-status 400 --path-prefix /api --fields clientIp,status,path --output output.log
+javac -cp "lib/*" -d out src\*.java
+java -cp "out;lib/*" Main data/access-small.log --min-status 400 --path-prefix /api --fields clientIp,status,path --output output.log
+Get-Content output.log
 ```
 
-## 5. Filtre Siralamasi Deneyi
+### 4.5. Filtre sıralaması deneyi
 
-### 5.1. Deneyin Amaci
+**Amaç:** Aynı kayıtlar üzerinde filtre sırası değiştiğinde çıktı eşitliğini ve işlem maliyetini karşılaştırmak.
 
-Filtrelerin uygulanma sirasinin
-sonuc dogruluguna ve islem maliyetine
-etkisini incelemek.
-
-### 5.2. Kullanilan Veri Seti
-
-Deney icin 200 adet CLF formatinda
-log kaydi olusturulmustur.
-
-Veri setinde:
-
-- HTTP 200 durum kodu
-- HTTP 500 durum kodu
-- /api/users URL yolu
-- /home URL yolu
-
-bulunmaktadir.
-
-Dosya adi:
-
-data/filter-experiment.log
-
-### 5.3. Birinci Siralama
+**Veri:** `data/filter-experiment.log`, 200 CLF kaydı; HTTP 200/500 ve `/api/users`/`/home` yolları.
 
 ```text
-FileLineSource
-      |
-      v
-ParserStage
-      |
-      v
-Status Filter
-      |
-      v
-Path Filter
-      |
-      v
-ProjectionStage
-      |
-      v
-Sink
+Sıra A: FileLineSource -> ParserStage -> Status Filter -> Path Filter -> Projection -> Sink
+Sıra B: FileLineSource -> ParserStage -> Path Filter -> Status Filter -> Projection -> Sink
 ```
 
-Bu siralamada once HTTP durum kodu,
-ardindan URL yolu kontrol edilir.
-
-### 5.4. Ikinci Siralama
-
-```text
-FileLineSource
-      |
-      v
-ParserStage
-      |
-      v
-Path Filter
-      |
-      v
-Status Filter
-      |
-      v
-ProjectionStage
-      |
-      v
-Sink
-```
-
-Bu siralamada once URL yolu,
-ardindan HTTP durum kodu kontrol edilir.
-
-### 5.5. Deney Sonuclari
-
-| Olcum | Status -> Path | Path -> Status |
+| Ölçüm | Status → Path | Path → Status |
 |---|---:|---:|
-| Girdi kaydi | 200 | 200 |
-| Cikti kaydi | 20 | 20 |
-| Status kontrolu | 200 | 100 |
-| Path kontrolu | 40 | 200 |
-| Toplam kontrol | 240 | 300 |
-| Ayni cikti | Evet | Evet |
+| Girdi kaydı | 200 | 200 |
+| Çıktı kaydı | 20 | 20 |
+| Status kontrolü | 200 | 100 |
+| Path kontrolü | 40 | 200 |
+| Toplam filtre kontrolü | 240 | 300 |
+| Çıktıların eşitliği | Evet | Evet |
+| Paylaşılan tek çalıştırmadaki süre | 90,222 ms | 11,791 ms |
 
-Paylasilan deney calistirmasinda olculen sureler:
+**Değerlendirme:** Her iki sıralama da 20 kayıt üretmiştir. Status filtresini önce uygulamak 60 daha az koşul kontrolü yapmıştır (300'e göre %20 azalma). Buna karşılık paylaşılan **tek çalıştırmadaki süre** Path → Status için daha kısa görünmektedir. JVM ısınması, JIT derlemesi, disk önbelleği ve sistem yükü gibi etkenler nedeniyle bu tek ölçümden kesin hız üstünlüğü çıkarılamaz. Sağlam karşılaştırma için ısınma turları, tekrarlı ölçümler ve ortanca süre raporlanmalıdır. Parser'dan önce `LogRecord` alanlarıyla filtreleme yapılamaz; ayrıca mevcut `ProjectionStage` sonrasında `PredicateFilterStage<LogRecord>` doğrudan kullanılamaz çünkü veri türü değişmiştir.
 
-| Siralama | Sure |
-|---|---:|
-| Status -> Path | 90.222 ms |
-| Path -> Status | 11.791 ms |
+### 4.6. Artım 3 testleri
 
-Bu sureler tek bir calistirmadan elde edilmistir.
-JVM isinmasi, sistem yuku ve diger etkenler
-sureleri degistirebilir.
+- `PredicateFilterStageTest`: 7 test.
+- `ProjectionStageTest`: 8 test.
+- `FileSinkTest`: 7 test.
+- `PipelineIntegrationTest`: 1 test; küçük CLF verisinden üretilen dosyanın içeriği doğrulanır.
 
-Bu nedenle sure sonuclari kesin bir
-performans ustunlugu olarak yorumlanmamalidir.
+Artım 3 sonundaki toplu çalıştırmada **32 test başarılı, 0 başarısız** olarak raporlanmıştır. Artım 3 teslimleri arasında `v3` etiketi ve bu deneyin `ARCHITECTURE.md` içinde belgelenmesi bulunur.
 
-### 5.6. Deneyin Degerlendirilmesi
+## 5. Artım 4 — Yapılandırma Odaklı Birleştirme ve Aşama Kaydı
 
-Iki filtre siralamasi da ayni 20 kaydi uretmistir.
+### 5.1. Mimari hedef
 
-Status filtresinin once kullanildigi
-siralama toplam 240 kontrol yapmistir.
+İşlem hattı topolojisini Java kodundan **bildirimsel YAML yapılandırmasına** taşımak. Amaç, aynı derlenmiş uygulamanın yalnızca yapılandırma dosyası değiştirilerek farklı pipeline'lar çalıştırabilmesidir.
 
-Path filtresinin once kullanildigi
-siralama toplam 300 kontrol yapmistir.
+### 5.2. Yapılandırma akışı
 
-Birinci siralamada 60 daha az kontrol
-gerceklestirilmistir.
-
-Bu, toplam filtre kontrol sayisinda
-%20 azalma anlamina gelmektedir.
-
-Deney, filtre siralamasinin sonuc
-dogrulugunu degistirmeden islem
-maliyetini etkileyebildigini gostermistir.
-
-## 6. Test Stratejisi
-
-Artim 3 kapsaminda yeni birim
-ve entegrasyon testleri eklenmistir.
-
-### PredicateFilterStageTest
-
-7 test bulunmaktadir.
-
-Status, path ve timestamp filtreleme
-davranislari kontrol edilmektedir.
-
-### ProjectionStageTest
-
-8 test bulunmaktadir.
-
-Alan secimi, alan sirasi, gecersiz alanlar
-ve veri dogrulugu test edilmektedir.
-
-### FileSinkTest
-
-7 test bulunmaktadir.
-
-Dosya acma, veri yazma, dosya kapatma
-ve hatali kullanim durumlari test edilmektedir.
-
-### PipelineIntegrationTest
-
-1 entegrasyon testi bulunmaktadir.
-
-ParserStage, PredicateFilterStage ve
-ProjectionStage birlikte calistirilarak
-FileSink dosya ciktisi kontrol edilmektedir.
-
-### Test Sonuclari
-
-Emine'nin JUnit calistirmasinda:
-
-- Toplam test: 32
-- Basarili test: 32
-- Basarisiz test: 0
-
-Bu sonuc, mevcut test senaryolarinin
-basariyla tamamlandigini gostermektedir.
-
-## 7. Mimari Tasarim Ilkeleri
-
-### 7.1. Single Responsibility Principle
-
-Her bileşen belirli bir gorevden sorumludur.
-
-ParserStage log ayrıştırma,
-PredicateFilterStage filtreleme,
-ProjectionStage alan secme,
-FileSink ise dosyaya yazma
-gorevini ustlenir.
-
-### 7.2. Open/Closed Principle
-
-Yeni Stage siniflari eklenerek
-pipeline genisletilebilir.
-
-Mevcut asamalarin her yeni gereksinim
-icin degistirilmesi gerekmez.
-
-### 7.3. Yeniden Kullanilabilirlik
-
-PredicateFilterStage farkli Predicate
-kosullariyla yeniden kullanilabilir.
-
-ProjectionStage farkli alan secimleriyle
-calistirilabilir.
-
-### 7.4. Tur Guvenligi
-
-PipelineBuilder'in via() metodu
-asamalarin giris ve cikis turleri
-arasindaki uyumu derleme zamaninda
-kontrol etmeye yardimci olur.
-
-### 7.5. Kaynak Yonetimi
-
-FileSink, open() ve close() metotlari
-ile dosya kaynaklarini yonetir.
-
-Pipeline, asamalarin yasam dongusu
-metotlarini calistirir.
-
-## 8. Sonuc
-
-Artim 3 ile LogFlow projesi
-daha esnek ve genisletilebilir
-bir pipeline mimarisine kavusmustur.
-
-Yeni filtreleme, projeksiyon ve
-dosyaya yazma ozellikleri eklenmistir.
-
-PipelineBuilder sayesinde veri isleme
-asamalari akici bir API ile
-birlestirilebilir hale gelmistir.
-
-JUnit testleriyle temel davranislar
-ve entegrasyon senaryosu dogrulanmistir.
-
-Filtre siralamasi deneyi sonucunda,
-ayni ciktiyi ureten farkli siralamalarin
-farkli sayida filtre kontrolu
-gerceklestirebildigi gosterilmistir.
+```text
+configs/*.yaml
+      |
+      v
+YamlConfigLoader (SnakeYAML)
+      |
+      v
+PipelineConfigBuilder (YAML doğrulama ve pipeline oluşturma)
+      |
+      +----> FileLineSource
+      +----> ParserStage / PredicateFilterStage / ProjectionStage
+      +----> FileSink
+      |
+      v
+Pipeline.run()
 ```
+
+**Uygulanan registry mimarisi:**
+
+```text
+YAML stage.type -> StageRegistry -> StageFactory -> somut Stage
+                              ^
+                              |
+                    DefaultStageRegistry
+                    (isim -> fabrika kaydı)
+```
+
+`StageFactory` parametrelerden aşama üreten fonksiyonel arayüzdür. `StageRegistry`, isimleri fabrikalarla eşleyen `Map<String, StageFactory>` tutar. `DefaultStageRegistry`, `parser`, `filter`, `projection` kayıtlarını sağlar.
+
+**Tamamlanan entegrasyon:** `PipelineConfigBuilder`, YAML aşama türünü `registry.create(type, params)` ile çözer. Sabit `switch (type)` kaldırılmıştır; aşamalar `DefaultStageRegistry` tarafından kayıtlı fabrikalar üzerinden oluşturulur. Öğretim elemanının `PipelineLoader` olarak adlandırdığı sorumluluk bu projede `PipelineConfigBuilder` tarafından yerine getirilir. İsim farkı korunmuştur.
+
+### 5.3. Mevcut YAML şeması
+
+Paylaşılan uygulama, hocanın örneğindeki `pipeline.name` ve iç içe `params` biçiminden farklı olarak **kök düzeyde** `source`, `stages`, `sink` anahtarlarını ve **doğrudan parametreleri** kullanır:
+
+```yaml
+source:
+  type: file
+  path: data/access-small.log
+
+stages:
+  - type: parser
+  - type: filter
+    minStatus: 400
+  - type: projection
+    fields:
+      - timestamp
+      - clientIp
+      - status
+      - path
+
+sink:
+  type: file
+  path: error-report.log
+```
+
+| Anahtar | Tür | Açıklama |
+|---|---|---|
+| `source` | nesne | Zorunlu; `type: file`, `path: metin` |
+| `stages` | liste | Aşama tanımları; her öğede `type` bulunur |
+| `stages[].type` | metin | `parser`, `filter`, `projection` |
+| `minStatus` | sayı | `filter` için isteğe bağlı alt durum kodu |
+| `pathPrefix` | metin | `filter` için isteğe bağlı URL öneki |
+| `fields` | metin listesi | `projection` için zorunlu alanlar |
+| `sink` | nesne | Zorunlu; `type: file`, `path: metin` |
+
+`filter` için `minStatus` veya `pathPrefix` alanlarından en az biri gereklidir. İkisi de verilirse iki koşul birlikte değerlendirilir. `projection.fields` boş olmamalı ve alan adları `LogRecord` alanlarıyla uyumlu olmalıdır.
+
+**Uyumluluk notu:** Hocanın örnek şeması `pipeline: {name, source: {type, params}, stages: ..., sink: ...}` biçimindedir. Mevcut şema ile bire bir uyum isteniyorsa yükleyici ve örnek YAML dosyaları yeniden düzenlenmelidir.
+
+### 5.4. Üç yapılandırma ve davranışları
+
+| Dosya | Amaç | Çıktı |
+|---|---|---|
+| `configs/error-report.yaml` | `status >= 400` hata kayıtları | `error-report.log` |
+| `configs/api-traffic.yaml` | `/api` ile başlayan yollar | `api-traffic.log` |
+| `configs/bandwidth-by-client.yaml` | `clientIp` ve `bytes` alanları | `bandwidth-by-client.log` |
+
+Üçüncü yapılandırma **istemci başına toplam bayt hesaplamaz**; her kayıttaki IP ve bayt değerlerini ayrı satırlarda çıkarır. Paylaşılan çalıştırmada bu dosyada **200 satır** görülmüştür. API çıktısının boş olması, örnek veride `/api` ile başlayan kayıt bulunmamasıyla uyumlu olabilir; beklenen içeriğin ayrı bir fixture ile doğrulanması gerekir.
+
+### 5.5. Derleme ve çalıştırma
+
+```powershell
+javac -cp "lib/*" -d out src\*.java
+java -cp "out;lib/*" Main --config configs/error-report.yaml
+java -cp "out;lib/*" Main --config configs/api-traffic.yaml
+java -cp "out;lib/*" Main --config configs/bandwidth-by-client.yaml
+```
+
+Bu komutlarda uygulama kodu yeniden derlenmeden üç YAML dosyası sırayla çalıştırılabilir. Windows PowerShell için sınıf yolu ayırıcı `;` kullanılmıştır.
+
+### 5.6. Yapılandırma doğrulama ve hata yönetimi
+
+Yapılandırma hataları, veri işlenmeye başlanmadan önce açık hata mesajıyla reddedilmelidir (**fail fast, fail loudly**). Paylaşılan manuel testlerde şu örnekler görülmüştür:
+
+```text
+Parametre hatasi: YAML dosyasi bulunamadi: configs/olmayan-dosya.yaml
+Parametre hatasi: Bilinmeyen asama turu: bilinmeyen
+Parametre hatasi: Filter icin minStatus veya pathPrefix gerekli.
+Parametre hatasi: Gecersiz veya bos alan secimi.
+```
+
+Bu hatalar **yapılandırma zamanı** hatalarıdır. CLF satırlarının hatalı olması gibi **çalışma zamanı veri hataları** ayrı ele alınır; yönergeye göre ayrıntılı veri hata yönetimi sonraki artımın konusudur.
+
+### 5.7. Test stratejisi ve mevcut sonuçlar
+
+| Test sınıfı | Başarılı test |
+|---|---:|
+| `YamlConfigLoaderTest` | 4 |
+| `StageRegistryTest` | 7 |
+| `PipelineConfigBuilderTest` | 6 |
+| `YamlPipelineIntegrationTest` | 1 |
+| **Artım 4 kapsamında eklenen** | **18** |
+
+Tüm artımların toplu JUnit çalıştırmasında **50 test başarılı, 0 başarısız** görülmüştür.
+
+```powershell
+javac -cp "out;lib/*" -d out test\*.java
+java -jar lib\junit-platform-console-standalone-6.1.3.jar execute --class-path "out;lib/snakeyaml-2.7.jar" --scan-class-path
+```
+
+**Hocanın beş zorunlu yükleyici senaryosu tamamlandı:** geçerli yapılandırma, bilinmeyen aşama, eksik parametre, yanlış parametre türü ve boş pipeline. Ayrıca geçersiz projeksiyon alanı test edilmektedir. `PipelineConfigBuilderTest` sınıfındaki **6 testin tamamı** son çalıştırmada geçmiştir.
+
+## 6. Mimari İlkeler ve Ödünleşimler
+
+- **Tek sorumluluk:** Kaynak okuma, ayrıştırma, filtreleme, projeksiyon ve yazma ayrı bileşenlerde bulunur.
+- **Açık/kapalı ilke:** Yeni aşama kayıtları `StageRegistry` üzerinden çözümlenir; builder içinde sabit aşama `switch` yapısı bulunmaz.
+- **Yeniden kullanılabilirlik:** Aynı `PredicateFilterStage`, farklı koşullarla kullanılabilir; `ProjectionStage` alan seçimini parametre olarak alır.
+- **Tür güvenliği:** Fluent builder, zincirleme kullanımda tür denetimi sağlar; dinamik YAML zincirinde ayrıca tür/doğrulama gereklidir.
+- **Kaynak yönetimi:** `open()`/`close()` yazma kaynaklarının kapatılmasını sağlar. Kapanış sırasında oluşan istisnaların diğer kaynakların kapanmasını engellememesi ayrıca gözden geçirilmelidir.
+- **Veri minimizasyonu:** Projeksiyon gereksiz alanların çıktıdan çıkarılmasını sağlar.
+- **Bildirimsel yapılandırma:** Artım 4'te pipeline seçimi Java kaynak kodundan YAML dosyasına taşınmıştır.
+
+
+## 7. Sonuç
+
+LogFlow, ilk artımdaki dosya okuma hattından yapılandırılmış `LogRecord` işleyen, filtreleme/projeksiyon uygulayan, dosyaya yazan ve YAML ile farklı davranışlar seçebilen bir mimariye gelişmiştir. Registry entegrasyonu ve boş pipeline / yanlış tür testleri tamamlanmıştır. Son toplu çalıştırmada **50/50 JUnit testi başarılıdır**. Git sürüm etiketleri ve uzak depoya gönderim ayrıca doğrulanmalıdır.

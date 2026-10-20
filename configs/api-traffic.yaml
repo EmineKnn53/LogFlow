@@ -1,0 +1,22 @@
+
+source:
+  type: file
+  path: data/access-small.log
+
+stages:
+  - type: parser
+
+  - type: filter
+    pathPrefix: /api
+
+  - type: projection
+    fields:
+      - timestamp
+      - clientIp
+      - method
+      - path
+      - status
+
+sink:
+  type: file
+  path: api-traffic.log

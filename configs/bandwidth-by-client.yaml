@@ -1,0 +1,16 @@
+
+source:
+  type: file
+  path: data/access-small.log
+
+stages:
+  - type: parser
+
+  - type: projection
+    fields:
+      - clientIp
+      - bytes
+
+sink:
+  type: file
+  path: bandwidth-by-client.log

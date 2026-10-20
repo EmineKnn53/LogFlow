@@ -1,0 +1,11 @@
+source:
+  type: file
+  path: data/access-small.log
+
+stages:
+  - type: parser
+  - type: bilinmeyen
+
+sink:
+  type: file
+  path: invalid-output.log

@@ -1,0 +1,15 @@
+source:
+  type: file
+  path: data/access-small.log
+
+stages:
+  - type: parser
+  - type: filter
+  - type: projection
+    fields:
+      - clientIp
+      - status
+
+sink:
+  type: file
+  path: invalid-filter-output.log

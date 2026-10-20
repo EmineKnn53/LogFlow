@@ -1,0 +1,14 @@
+source:
+  type: file
+  path: data/access-small.log
+
+stages:
+  - type: parser
+  - type: projection
+    fields:
+      - clientIp
+      - olmayanAlan
+
+sink:
+  type: file
+  path: invalid-field-output.log
