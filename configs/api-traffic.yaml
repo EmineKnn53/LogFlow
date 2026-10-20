@@ -1,7 +1,7 @@
 
 source:
   type: file
-  path: data/access-small.log
+  path: data/access-errors-demo.log
 
 stages:
   - type: parser
