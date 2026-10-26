@@ -1,4 +1,4 @@
-# LogFlow — Yazılım Mimarisi Dönem Projesi
+﻿# LogFlow — Yazılım Mimarisi Dönem Projesi
 
 **Java ile bileşen tabanlı, genişletilebilir log işleme hattı (pipeline)**  
 **Kapsam:** Artım 1, Artım 2, Artım 3 ve Artım 4  
@@ -298,7 +298,7 @@ java -cp "out;lib/*" Main --config configs/invalid-field.yaml
 Parametre hatasi: Gecersiz veya bos alan secimi.
 ```
 
-**Ödevde istenen yükleyici test durumları:** geçerli yapılandırma, bilinmeyen aşama, eksik parametre, yanlış türde parametre ve boş pipeline. İlk dört kategori için testler ve hata kontrolleri gösterilmiştir; **boş pipeline'ın reddedilmesi ayrıca kontrol edilmelidir** (mevcut `PipelineConfigBuilder` boş `stages` listesini açıkça reddetmiyor).
+**Ödevde istenen yükleyici test durumları:** geçerli yapılandırma, bilinmeyen aşama, eksik parametre, yanlış türde parametre ve boş pipeline. İlk dört kategori için testler ve hata kontrolleri gösterilmiştir; **Boş pipeline yapılandırması** PipelineConfigBuilder tarafından reddedilmektedir. Bu davranış PipelineConfigBuilderTest kapsamında doğrulanmış ve test başarıyla tamamlanmıştır.
 
 **Ödev teslimleri:** `v4` etiketi, `ARCHITECTURE.md` içinde yapılandırma şeması, stage registry, loader/builder, üç YAML dosyası ve README içinde hata örnekleri.
 
@@ -406,13 +406,13 @@ java -jar lib\junit-platform-console-standalone-6.1.3.jar execute --class-path "
 
 | Ölçüt | Sonuç |
 | --- | ---: |
-| Bulunan test | **48** |
-| Başarılı test | **48** |
+| Bulunan test | **50** |
+| Başarılı test | **50** |
 | Başarısız test | **0** |
 | Atlanan test | **0** |
 | Başarılı test konteyneri | **13** |
 
-Testler parser, filtre, projeksiyon, dosya yazma, pipeline, YAML loader, registry, yapılandırma builder'ı ve YAML entegrasyonunu kapsar. **48/48 sonucu yalnızca gösterilen test çalıştırmasını ifade eder; tüm ödev koşullarının eksiksiz karşılandığını tek başına kanıtlamaz.**
+Testler parser, filtre, projeksiyon, dosya yazma, pipeline, YAML loader, registry, yapılandırma builder'ı ve YAML entegrasyonunu kapsar. **50/50 sonucu yalnızca gösterilen test çalıştırmasını ifade eder; tüm ödev koşullarının eksiksiz karşılandığını tek başına kanıtlamaz.**
 
 ## 11. Mimari belgeler ve sürüm yönetimi
 
