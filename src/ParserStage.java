@@ -13,10 +13,6 @@ public class ParserStage implements Stage<String, LogRecord> {
             "^(\\S+)\\s+\\S+\\s+\\S+\\s+\\[([^\\]]+)]\\s+\"(\\S+)\\s+([^\\s\"]+)(?:\\s+[^\"]+)?\"\\s+(\\S+)\\s+(\\S+)(?:\\s+\"([^\"]*)\")?\\s*$"
     );
 
-    /*
-     * uuuu kullanilmasinin nedeni LocalDateTime ile
-     * proleptic year degerinin dogrudan parse edilmesidir.
-     */
     private static final DateTimeFormatter DATE_FORMAT =
             DateTimeFormatter.ofPattern(
                     "dd/MMM/uuuu:HH:mm:ss",
@@ -25,23 +21,41 @@ public class ParserStage implements Stage<String, LogRecord> {
 
     private int errorCount = 0;
 
+    private final boolean strict;
+
+    public ParserStage() {
+        this(false);
+    }
+
+    public ParserStage(boolean strict) {
+        this.strict = strict;
+    }
+
     @Override
     public void process(String input, Emitter<LogRecord> out)
             throws StageException {
 
         if (input == null || input.trim().isEmpty()) {
-            errorCount++;
+            reject("Bos log satiri", null);
+            return;
+        }
+
+        if (input.indexOf('\uFFFD') >= 0) {
+            reject("Gecersiz UTF-8 bayt dizisi", null);
             return;
         }
 
         Matcher matcher = LOG_PATTERN.matcher(input);
 
         if (!matcher.matches()) {
-            errorCount++;
+            reject("CLF bicimi gecersiz", null);
             return;
         }
 
+        LogRecord record;
+
         try {
+
             String clientIp = matcher.group(1);
 
             LocalDateTime localDateTime = LocalDateTime.parse(
@@ -75,7 +89,7 @@ public class ParserStage implements Stage<String, LogRecord> {
                 userAgent = "";
             }
 
-            LogRecord record = new LogRecord(
+            record = new LogRecord(
                     timestamp,
                     clientIp,
                     method,
@@ -87,10 +101,21 @@ public class ParserStage implements Stage<String, LogRecord> {
                     input
             );
 
-            out.emit(record);
+        } catch (RuntimeException e) {
+            reject("Log ayrıştırma hatasi", e);
+            return;
+        }
 
-        } catch (Exception e) {
-            errorCount++;
+        out.emit(record);
+    }
+
+    private void reject(String reason, Throwable cause)
+            throws StageException {
+
+        errorCount++;
+
+        if (strict) {
+            throw new StageException(reason, cause);
         }
     }
 

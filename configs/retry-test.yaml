@@ -1,0 +1,54 @@
+
+# ARTIM 5 - RETRY POLITIKASI TESTI
+
+source:
+  type: file
+  path: data/access-dirty.log
+
+stages:
+
+  # Hatali kaydi iki kez yeniden dene
+  - type: parser
+    errorPolicy: RETRY(2)
+
+  # Gecerli kayitlari dogrula
+  - type: validation
+    errorPolicy: DEAD_LETTER
+
+    requiredFields:
+      - timestamp
+      - clientIp
+      - method
+      - path
+      - userAgent
+
+    minBytes: 0
+    maxBytes: 1000000
+    maxRawLength: 8192
+
+    minStatus: 100
+    maxStatus: 599
+
+    minTimestamp: '2000-01-01T00:00:00Z'
+    maxTimestamp: '2035-12-31T23:59:59Z'
+
+    validateIp: true
+
+  - type: projection
+    errorPolicy: FAIL_FAST
+
+    fields:
+      - timestamp
+      - clientIp
+      - method
+      - path
+      - status
+      - bytes
+
+sink:
+  type: file
+  path: retry-output.log
+
+deadLetter:
+  type: file
+  path: retry-dead-letter.jsonl

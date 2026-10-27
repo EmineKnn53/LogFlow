@@ -1,0 +1,41 @@
+
+# ARTIM 5 - BOS DOSYA TESTI
+
+source:
+  type: file
+  path: data/access-empty.log
+
+stages:
+  - type: parser
+    errorPolicy: DEAD_LETTER
+
+  - type: validation
+    errorPolicy: DEAD_LETTER
+
+    requiredFields:
+      - timestamp
+      - clientIp
+      - method
+      - path
+
+    minBytes: 0
+    minStatus: 100
+    maxStatus: 599
+
+    validateIp: true
+
+  - type: projection
+    errorPolicy: FAIL_FAST
+    fields:
+      - timestamp
+      - clientIp
+      - status
+      - path
+
+sink:
+  type: file
+  path: empty-output.log
+
+deadLetter:
+  type: file
+  path: empty-dead-letter.jsonl

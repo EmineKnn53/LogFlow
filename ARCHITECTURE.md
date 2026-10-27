@@ -335,3 +335,203 @@ java -jar lib\junit-platform-console-standalone-6.1.3.jar execute --class-path "
 ## 7. Sonuç
 
 LogFlow, ilk artımdaki dosya okuma hattından yapılandırılmış `LogRecord` işleyen, filtreleme/projeksiyon uygulayan, dosyaya yazan ve YAML ile farklı davranışlar seçebilen bir mimariye gelişmiştir. Registry entegrasyonu ve boş pipeline / yanlış tür testleri tamamlanmıştır. Son toplu çalıştırmada **50/50 JUnit testi başarılıdır**. Git sürüm etiketleri ve uzak depoya gönderim ayrıca doğrulanmalıdır.
+
+
+
+---
+
+# Artım 5 — Hata Yönetimi, Doğrulama ve Dead-Letter Kanalı
+
+## 1. Mimari Amaç
+
+Artım 5'in temel amacı, LogFlow işlem hattındaki hataları
+sistematik biçimde yönetmek ve hatalı kayıtlar nedeniyle
+tüm işlemin gereksiz yere durmasını önlemektir.
+
+Önceki artımlarda hatalı log kayıtları ayrıştırıcı
+tarafından atılıp sayılıyordu.
+
+Bu artımda hata yönetimi, Pipeline tarafından uygulanan
+yapılandırılabilir politikalara dönüştürülmüştür.
+
+Sistem artık ana veri akışına ek olarak bağımsız bir
+dead-letter çıktı kanalına sahiptir.
+
+## 2. Hata Türleri
+
+### StageException
+
+Tek bir kayıt işlenirken oluşan kurtarılabilir hatadır.
+
+Örnekler:
+- Geçersiz log biçimi
+- Negatif byte değeri
+- Geçersiz IP adresi
+- Doğrulama kurallarına uymayan zaman damgası
+
+Bu hatalarda işlem hattının davranışı, ilgili aşamanın
+hata politikasına göre belirlenir.
+
+### PipelineException
+
+İşlem hattının devam etmesini engelleyen ciddi hatadır.
+
+Örnekler:
+- Kaynak dosyanın okunamaması
+- Çıktı dosyasına yazılamaması
+- FAIL_FAST politikasının devreye girmesi
+- RETRY denemelerinin tükenmesi
+
+PipelineException oluştuğunda işlem durdurulur,
+açık kaynaklar kapatılır ve RunSummary yazdırılır.
+
+## 3. Hata Politikaları
+
+| Politika | Davranış |
+|---|---|
+| FAIL_FAST | İlk hatada işlemi durdurur. |
+| SKIP | Hatalı kaydı atlar ve sayar. |
+| DEAD_LETTER | Hatalı kaydı ikinci çıktı kanalına gönderir. |
+| RETRY(n) | Başarısız işlemi n kez yeniden dener. |
+
+Politikalar YAML yapılandırması üzerinden aşama bazında
+seçilebilir.
+
+RETRY(n), özellikle ileriki artımlarda eklenecek
+geçici I/O hataları için tasarlanmıştır.
+
+## 4. Artım 5 Mimari Diyagramı
+
+```mermaid
+flowchart TD
+    A["FileLineSource"] --> B["ParserStage"]
+    B --> C["ValidationStage"]
+    C --> D["ProjectionStage"]
+    D --> E["Ana FileSink"]
+
+    B -->|"DEAD_LETTER"| F["Dead-letter FileSink"]
+    C -->|"DEAD_LETTER"| F
+
+    B -->|"SKIP"| G["Atlanan kayıt sayacı"]
+    C -->|"SKIP"| G
+
+    A -.-> H["RunSummary"]
+    E -.-> H
+    F -.-> H
+    G -.-> H
+```
+
+Bu mimaride normal ve hatalı kayıtların çıktı yolları
+birbirinden ayrılmıştır.
+
+Hata yönlendirmesi yalnızca try/catch işlemi değil,
+işlem hattının topolojisini değiştiren mimari karardır.
+
+## 5. ValidationStage
+
+ValidationStage, LogRecord nesnelerini YAML'de
+tanımlanan kurallara göre doğrular.
+
+Desteklenen kurallar:
+
+- requiredFields: Zorunlu alan kontrolü
+- minBytes / maxBytes: Byte aralığı
+- minStatus / maxStatus: HTTP durum kodu aralığı
+- minTimestamp / maxTimestamp: Tarih aralığı
+- validateIp: IPv4 biçim kontrolü
+- maxRawLength: Ham satır uzunluğu sınırı
+
+Doğrulama başarısız olursa StageException oluşur.
+
+## 6. Dead-Letter Kanalı
+
+FailedRecord aşağıdaki bilgileri taşır:
+
+- rawInput: Orijinal log satırı
+- stageName: Hatanın oluştuğu aşama
+- exception: Hata türü ve açıklaması
+- timestamp: Hatanın kaydedildiği zaman
+
+Hatalı kayıtlar JSONL biçiminde ayrı dosyaya yazılır.
+
+Ana çıktı ile dead-letter çıktısı bağımsız dosyalardır.
+
+## 7. Kaos Testi
+
+Test dosyası: data/access-dirty.log
+
+| Test verisi | Aşama | Politika | Sonuç |
+|---|---|---|---|
+| Geçerli kayıt | Parser/Validation | - | Ana çıktı |
+| Kesilmiş satır | Parser | DEAD_LETTER | Hata kanalı |
+| Geçersiz UTF-8 | Parser | DEAD_LETTER | Hata kanalı |
+| Negatif byte | Validation | DEAD_LETTER | Hata kanalı |
+| 1970 tarihi | Validation | DEAD_LETTER | Hata kanalı |
+| 2099 tarihi | Validation | DEAD_LETTER | Hata kanalı |
+| 100 KB satır | Validation | DEAD_LETTER | Hata kanalı |
+| Geçersiz IP | Validation | DEAD_LETTER | Hata kanalı |
+| İkinci geçerli kayıt | Parser/Validation | - | Ana çıktı |
+
+Boş kaynak dosyası ayrıca data/access-empty.log
+üzerinden test edilmiştir.
+
+## 8. RunSummary
+
+RunSummary her çalıştırmada aşağıdaki bilgileri raporlar:
+
+- Gelen kayıt sayısı
+- Ana çıktıya ulaşan kayıt sayısı
+- Aşama bazında atlanan kayıt sayısı
+- Filtrelenen kayıt sayısı
+- Dead-letter kanalına gönderilen kayıt sayısı
+- Gerçek çalışma süresi
+
+Kaos testi sonucu:
+
+Gelen kayıt: 9
+Başarılı kayıt: 2
+Dead-letter kayıt: 7
+Atlanan kayıt: 0
+Filtrelenen kayıt: 0
+
+Kayıt tutarlılığı:
+
+9 = 2 + 7 + 0 + 0
+
+Bu eşitlik mevcut tek çıktılı aşama düzeninde tüm
+girdi kayıtlarının hesaba katıldığını göstermektedir.
+
+## 9. Test Sonuçları
+
+Artım 5 kapsamında şu senaryolar doğrulanmıştır:
+
+- DEAD_LETTER
+- FAIL_FAST
+- SKIP
+- RETRY(2) başarısızlık senaryosu
+- RETRY(2) başarılı yeniden deneme senaryosu
+- Boş dosya
+- Eksik dead-letter hedefi
+- Bozuk log dosyası
+
+JUnit toplam sonucu:
+
+56 test çalıştırıldı.
+56 test başarılı.
+0 test başarısız.
+
+Bu sonuçlar 27.10.2026 tarihinde elde edilmiştir.
+
+## 10. Mimari Değerlendirme
+
+Artım 5 ile LogFlow, hatalı kayıtları yalnızca
+atlayan doğrusal bir yapıdan, hata politikalarıyla
+yönetilen çok kanallı bir işlem hattına dönüşmüştür.
+
+Kayıt seviyesindeki hatalar ile sistem seviyesindeki
+hatalar ayrıştırılmıştır.
+
+Hata politikaları YAML üzerinden değiştirilebilir.
+
+RunSummary, sonraki artımlarda yapılacak performans
+ölçümleri için temel oluşturmaktadır.

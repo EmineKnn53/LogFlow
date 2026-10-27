@@ -145,3 +145,138 @@ FileLineSource → Stage → ConsoleSink
 | v2 | LogRecord, ParserStage, JUnit ve JaCoCo | 8 ayrıştırıcı testi; %76,24 satır kapsama (önceki kayıt) |
 | v3 | Filtreleme, projeksiyon, FileSink, PipelineBuilder ve CLI | 32/32 test |
 | v4 | YAML, StageFactory, StageRegistry, PipelineConfigBuilder ve üç yapılandırma | 50/50 test; üç YAML komutu başarılı |
+
+
+---
+
+# Artım 5 — Hata Yönetimi, Doğrulama ve Dead-Letter Kanalı
+
+**Tarih:** 27.10.2026
+**Sürüm:** v5
+**Durum:** Geliştirme ve testler tamamlandı.
+
+## Eklenen Sınıflar
+
+- PipelineException.java
+  - İşlem hattının devam edemediği hataları temsil eder.
+
+- ErrorPolicy.java
+  - FAIL_FAST, SKIP, DEAD_LETTER ve RETRY(n)
+    hata politikalarını tanımlar.
+
+- FailedRecord.java
+  - Hatalı kayıtların ham verisini, hata açıklamasını,
+    aşama adını ve zaman bilgisini saklar.
+
+- RunSummary.java
+  - Gelen, çıkan, atlanan, filtrelenen ve dead-letter
+    kayıt sayılarını ve gerçek çalışma süresini raporlar.
+
+- ValidationStage.java
+  - YAML kurallarına göre kayıt doğrulama yapar.
+
+- DirtyFixtureGenerator.java
+  - Kaos testi için bozuk ve boş log dosyaları üretir.
+
+- Increment5Test.java
+  - Artım 5 için JUnit testlerini içerir.
+
+## Güncellenen Sınıflar
+
+- ParserStage.java
+  - Katı hata yönetimi ve StageException desteği eklendi.
+  - Önceki artımlarla uyumluluk korundu.
+
+- Pipeline.java
+  - Hata politikaları entegre edildi.
+  - Bağımsız dead-letter kanalı eklendi.
+  - RunSummary desteği eklendi.
+  - Kaynak açma ve kapatma işlemleri geliştirildi.
+
+- FileLineSource.java
+  - Geçersiz UTF-8 baytlarının işlenmesi geliştirildi.
+  - Dosya okuma hataları PipelineException ile yönetildi.
+
+- DefaultStageRegistry.java
+  - ValidationStage kayıt mekanizmasına eklendi.
+  - ParserStage katı hata modunda kullanılabilir hale geldi.
+
+- PipelineConfigBuilder.java
+  - YAML hata politikalarının okunması eklendi.
+  - Dead-letter hedefi yapılandırması eklendi.
+  - Eksik ve geçersiz yapılandırma kontrolleri genişletildi.
+
+## Eklenen Yapılandırma Dosyaları
+
+- configs/dirty-validation.yaml
+- configs/fail-fast-test.yaml
+- configs/skip-test.yaml
+- configs/retry-test.yaml
+- configs/empty-test.yaml
+
+## Eklenen Test Verileri
+
+- data/access-dirty.log
+- data/access-empty.log
+
+Kaos dosyasında kesilmiş satır, geçersiz UTF-8 baytı,
+negatif byte, 1970 ve 2099 tarihleri, uzun satır ve
+geçersiz IP adresi senaryoları bulunmaktadır.
+
+## Test Sonuçları
+
+| Test | Sonuç |
+|---|---|
+| DEAD_LETTER | Başarılı |
+| FAIL_FAST | Başarılı |
+| SKIP | Başarılı |
+| RETRY(2) hata sonlandırma | Başarılı |
+| RETRY(2) başarılı yeniden deneme | Başarılı |
+| Boş dosya | Başarılı |
+| Eksik dead-letter hedefi | Başarılı |
+| Kaos testi | Başarılı |
+
+## JUnit Sonucu
+
+- Toplam test: 56
+- Başarılı test: 56
+- Başarısız test: 0
+
+## Kaos Testi Sonucu
+
+- Gelen kayıt: 9
+- Geçerli kayıt: 2
+- Dead-letter kayıt: 7
+- Kayıp kayıt: 0
+
+## Mimari Kazanımlar
+
+- Kayıt düzeyindeki hatalar sistem hatalarından ayrıldı.
+- Hata politikaları yapılandırılabilir hale getirildi.
+- Ana veri akışından bağımsız hata kanalı oluşturuldu.
+- Doğrulama kuralları bildirimsel YAML yapısına taşındı.
+- Performans ölçümleri için RunSummary altyapısı eklendi.
+```
+
+## 3. Kaydet
+
+`Ctrl + S` ile kaydet.
+
+### Şu ana kadarki durum
+
+| Teslim gereksinimi | Durum |
+|---|---|
+| Hata politikaları | <badge color="success">Tamamlandı</badge> |
+| ValidationStage | <badge color="success">Tamamlandı</badge> |
+| Dead-letter kanalı | <badge color="success">Tamamlandı</badge> |
+| RunSummary | <badge color="success">Tamamlandı</badge> |
+| Kaos testi | <badge color="success">Tamamlandı</badge> |
+| 56 JUnit testi | <badge color="success">Başarılı</badge> |
+| ARCHITECTURE.md | <badge color="success">Hazır</badge> |
+| README.md | <badge color="success">Hazır</badge> |
+| CHANGELOG.md | <badge color="info">Bu adım</badge> |
+| Git v5 etiketi | <badge>Bekliyor</badge> |
+
+**Emine, dosyayı kaydedince “Adım 25 tamam” yaz.**
+
+Sonraki adımda önce `git status` ile değişiklikleri kontrol edeceğiz. Ardından Artım 5'i ayrı bir commit olarak kaydedip hocanın istediği `v5` etiketini oluşturacağız.

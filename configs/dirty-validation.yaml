@@ -1,0 +1,57 @@
+
+# ARTIM 5 - Hata Yonetimi ve Dogrulama
+
+source:
+  type: file
+  path: data/access-dirty.log
+
+stages:
+  # 1. Log satirlarini ayrıştır
+  - type: parser
+    errorPolicy: DEAD_LETTER
+
+  # 2. Kayitlari kurallara gore dogrula
+  - type: validation
+    errorPolicy: DEAD_LETTER
+
+    requiredFields:
+      - timestamp
+      - clientIp
+      - method
+      - path
+      - userAgent
+
+    minBytes: 0
+    maxBytes: 1000000
+
+    maxRawLength: 8192
+
+    minStatus: 100
+    maxStatus: 599
+
+    minTimestamp: '2000-01-01T00:00:00Z'
+    maxTimestamp: '2035-12-31T23:59:59Z'
+
+    validateIp: true
+
+  # 3. Gecerli kayitlardan alanlari sec
+  - type: projection
+    errorPolicy: FAIL_FAST
+
+    fields:
+      - timestamp
+      - clientIp
+      - method
+      - path
+      - status
+      - bytes
+
+# Ana cikis
+sink:
+  type: file
+  path: dirty-output.log
+
+# Hata kayitlarinin ayri cikisi
+deadLetter:
+  type: file
+  path: dirty-dead-letter.jsonl

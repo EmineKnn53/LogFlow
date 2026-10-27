@@ -439,3 +439,143 @@ Etiketlerin gerçekten oluşturulup uzak depoya gönderildiği `git tag` ve `git
 ---
 
 **LogFlow — Yazılım Mimarisi Dönem Projesi | Artım 1–4**
+
+
+---
+
+# Artım 5 — Hata Yönetimi, Doğrulama ve Dead-Letter
+
+## Genel Bakış
+
+Artım 5 kapsamında LogFlow uygulamasına yapılandırılabilir
+hata yönetimi, kayıt doğrulama, bağımsız dead-letter kanalı
+ve çalışma özeti özellikleri eklenmiştir.
+
+Sistem, hatalı kayıtları seçilen politikaya göre yönetir.
+
+## Yeni Özellikler
+
+### Hata Yönetimi
+
+İki hata türü bulunmaktadır:
+
+- StageException: Tek bir kayda ait kurtarılabilir hata
+- PipelineException: İşlem hattının devam edemediği hata
+
+Desteklenen hata politikaları:
+
+- FAIL_FAST
+- SKIP
+- DEAD_LETTER
+- RETRY(n)
+
+Politikalar YAML üzerinden aşama bazında yapılandırılır.
+
+### ValidationStage
+
+Log kayıtlarını aşağıdaki kurallara göre doğrular:
+
+- Zorunlu alanlar
+- Sayısal değer aralıkları
+- Zaman damgası aralığı
+- IPv4 adres biçimi
+- Ham satır uzunluğu
+
+### Dead-Letter Kanalı
+
+Hatalı kayıtlar ayrı bir JSONL dosyasına yönlendirilir.
+
+Her FailedRecord şu bilgileri içerir:
+
+- rawInput
+- stageName
+- exception
+- timestamp
+
+### RunSummary
+
+Her çalıştırmanın sonunda gelen, çıkan, atlanan,
+filtrelenen ve dead-letter kayıt sayıları ile
+geçen süre raporlanır.
+
+## Artım 5 Çalıştırma Komutları
+
+Önce Java dosyalarını derleyin:
+
+```powershell
+$files = Get-ChildItem src -Filter "*.java" | Select-Object -ExpandProperty FullName
+javac -cp "lib/*" -d out $files
+```
+
+Kaos testi dosyalarını oluşturun:
+
+```powershell
+java -cp "out;lib/*" DirtyFixtureGenerator
+```
+
+### Dead-Letter Testi
+
+```powershell
+java -cp "out;lib/*" Main --config configs/dirty-validation.yaml
+```
+
+### FAIL_FAST Testi
+
+```powershell
+java -cp "out;lib/*" Main --config configs/fail-fast-test.yaml
+```
+
+### SKIP Testi
+
+```powershell
+java -cp "out;lib/*" Main --config configs/skip-test.yaml
+```
+
+### RETRY Testi
+
+```powershell
+java -cp "out;lib/*" Main --config configs/retry-test.yaml
+```
+
+### Boş Dosya Testi
+
+```powershell
+java -cp "out;lib/*" Main --config configs/empty-test.yaml
+```
+
+FAIL_FAST ve RETRY testlerinde PipelineException oluşması
+beklenen davranıştır.
+
+## JUnit Testleri
+
+Testleri derleyin:
+
+```powershell
+$tests = Get-ChildItem test -Filter "*.java" | Select-Object -ExpandProperty FullName
+javac -cp "out;lib/*" -d out $tests
+```
+
+Bütün testleri çalıştırın:
+
+```powershell
+java -jar lib/junit-platform-console-standalone-6.1.3.jar execute --class-path "out;lib/snakeyaml-2.7.jar" --scan-classpath --details summary
+```
+
+## Doğrulanan Test Sonuçları
+
+27.10.2026 tarihinde yapılan testlerde:
+
+| Ölçüm | Sonuç |
+|---|---|
+| Toplam JUnit testi | 56 |
+| Başarılı test | 56 |
+| Başarısız test | 0 |
+| Kaos dosyası gelen kayıt | 9 |
+| Ana çıktıya ulaşan | 2 |
+| Dead-letter kayıt | 7 |
+
+## Mimari Dokümantasyon
+
+Hata modeli, politika açıklamaları, iki kanallı
+mimari diyagramı ve kaos testi tablosu
+ARCHITECTURE.md dosyasında açıklanmıştır.

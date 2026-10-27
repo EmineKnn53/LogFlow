@@ -1,0 +1,58 @@
+
+# ARTIM 5 - FAIL_FAST HATA POLITIKASI TESTI
+
+source:
+  type: file
+  path: data/access-dirty.log
+
+stages:
+
+  # 1. Parser - ilk hatada islemi durdur
+  - type: parser
+    errorPolicy: FAIL_FAST
+
+  # 2. Kayit dogrulama
+  - type: validation
+    errorPolicy: DEAD_LETTER
+
+    requiredFields:
+      - timestamp
+      - clientIp
+      - method
+      - path
+      - userAgent
+
+    minBytes: 0
+    maxBytes: 1000000
+
+    maxRawLength: 8192
+
+    minStatus: 100
+    maxStatus: 599
+
+    minTimestamp: '2000-01-01T00:00:00Z'
+    maxTimestamp: '2035-12-31T23:59:59Z'
+
+    validateIp: true
+
+  # 3. Gecerli kayitlardan alanlari sec
+  - type: projection
+    errorPolicy: FAIL_FAST
+
+    fields:
+      - timestamp
+      - clientIp
+      - method
+      - path
+      - status
+      - bytes
+
+# Ana cikis dosyasi
+sink:
+  type: file
+  path: fail-fast-output.log
+
+# Hata kayitlari icin ayri kanal
+deadLetter:
+  type: file
+  path: fail-fast-dead-letter.jsonl

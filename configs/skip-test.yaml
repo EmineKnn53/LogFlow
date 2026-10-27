@@ -1,0 +1,50 @@
+
+# ARTIM 5 - SKIP POLITIKASI TESTI
+
+source:
+  type: file
+  path: data/access-dirty.log
+
+stages:
+
+  # Hatalı log satırlarını atla ve say
+  - type: parser
+    errorPolicy: SKIP
+
+  # Doğrulamadan gecemeyen kayitlari atla
+  - type: validation
+    errorPolicy: SKIP
+
+    requiredFields:
+      - timestamp
+      - clientIp
+      - method
+      - path
+      - userAgent
+
+    minBytes: 0
+    maxBytes: 1000000
+    maxRawLength: 8192
+
+    minStatus: 100
+    maxStatus: 599
+
+    minTimestamp: '2000-01-01T00:00:00Z'
+    maxTimestamp: '2035-12-31T23:59:59Z'
+
+    validateIp: true
+
+  - type: projection
+    errorPolicy: FAIL_FAST
+
+    fields:
+      - timestamp
+      - clientIp
+      - method
+      - path
+      - status
+      - bytes
+
+sink:
+  type: file
+  path: skip-output.log

@@ -1,6 +1,13 @@
+
 import java.io.BufferedReader;
-import java.io.FileReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
+
+import java.nio.charset.StandardCharsets;
+import java.nio.charset.CodingErrorAction;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 public class FileLineSource implements Source<String> {
 
@@ -12,7 +19,21 @@ public class FileLineSource implements Source<String> {
 
     @Override
     public void produce(Emitter<String> out) {
-        try (BufferedReader reader = new BufferedReader(new FileReader(filePath))) {
+
+        try (BufferedReader reader =
+                new BufferedReader(
+                    new InputStreamReader(
+                        Files.newInputStream(Path.of(filePath)),
+                        StandardCharsets.UTF_8
+                            .newDecoder()
+                            .onMalformedInput(
+                                CodingErrorAction.REPLACE
+                            )
+                            .onUnmappableCharacter(
+                                CodingErrorAction.REPLACE
+                            )
+                    )
+                )) {
 
             String line;
 
@@ -21,7 +42,12 @@ public class FileLineSource implements Source<String> {
             }
 
         } catch (IOException e) {
-            throw new RuntimeException("Dosya okunurken hata oluştu: " + filePath, e);
+
+            throw new PipelineException(
+                "Dosya okunurken hata olustu: "
+                    + filePath,
+                e
+            );
         }
     }
 }
